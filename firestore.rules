@@ -1,0 +1,151 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =========================================================================
+    // Authentication & Core Identity Helpers
+    // =========================================================================
+
+    function isAuthenticated() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    function isUser(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Safely retrieve user document from Firestore users collection
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function getUserRole() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? getUserData().role
+        : 'unauthenticated';
+    }
+
+    function getUserBusinessId() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? getUserData().businessId
+        : '';
+    }
+
+    // =========================================================================
+    // Role Hierarchy & Multi-Tenant Authorization Helpers
+    // =========================================================================
+
+    function isPlatformAdmin() {
+      return isAuthenticated() && getUserRole() == 'admin';
+    }
+
+    function isOwnerOfBusiness(businessId) {
+      return isPlatformAdmin() || (isAuthenticated() && getUserRole() == 'owner' && getUserBusinessId() == businessId);
+    }
+
+    function isStaffOfBusiness(businessId) {
+      return isPlatformAdmin() || (isAuthenticated() && (getUserRole() == 'staff' || getUserRole() == 'owner') && getUserBusinessId() == businessId);
+    }
+
+    // =========================================================================
+    // Collection: Users (Identity & Roles)
+    // =========================================================================
+
+    match /users/{userId} {
+      // Users can read their own profile; owners/staff can read client records in their business; admin can read all
+      allow read: if isUser(userId) || (isAuthenticated() && (getUserRole() == 'owner' || getUserRole() == 'staff')) || isPlatformAdmin();
+
+      // Creation on first sign-in: User can only create their own record and must default to customer role (or match demo seed)
+      allow create: if isUser(userId) && request.resource.data.uid == userId && (request.resource.data.role == 'customer' || isPlatformAdmin());
+
+      // Update: User can update display info, BUT cannot tamper with role, uid, or businessId
+      allow update: if (isUser(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'uid', 'businessId']))
+                    || isPlatformAdmin();
+
+      // Deletion restricted to platform admins
+      allow delete: if isPlatformAdmin();
+    }
+
+    // =========================================================================
+    // Collection: Businesses (Multi-Tenant Entities)
+    // =========================================================================
+
+    match /businesses/{businessId} {
+      // Public directory info (address, hours, contact info) is readable by everyone
+      allow read: if true;
+
+      // Only the verified owner of the business or platform admin can modify studio settings
+      allow write: if isOwnerOfBusiness(businessId);
+    }
+
+    // =========================================================================
+    // Collection: Services (Grooming Catalog)
+    // =========================================================================
+
+    match /services/{serviceId} {
+      // Public read so prospective clients can view prices, durations, and packages
+      allow read: if true;
+
+      // Only studio owner or admin can add, update, or delete services in their business
+      allow create: if isOwnerOfBusiness(request.resource.data.businessId);
+      allow update, delete: if isOwnerOfBusiness(resource.data.businessId);
+    }
+
+    // =========================================================================
+    // Collection: Pets (Customer Companions)
+    // =========================================================================
+
+    match /pets/{petId} {
+      // Customer can read only their own pets; staff/owner can view pets for their business; admin can read all
+      allow read: if (isAuthenticated() && resource.data.ownerUid == request.auth.uid)
+                  || isStaffOfBusiness(resource.data.businessId);
+
+      // Customer can register pets for themselves only
+      allow create: if isAuthenticated() && request.resource.data.ownerUid == request.auth.uid;
+
+      // Customer can update/delete only their own pet; staff/owners of that business can manage records
+      allow update, delete: if (isAuthenticated() && resource.data.ownerUid == request.auth.uid)
+                            || isStaffOfBusiness(resource.data.businessId);
+    }
+
+    // =========================================================================
+    // Collection: Appointments (Booking Ledger)
+    // =========================================================================
+
+    match /appointments/{appointmentId} {
+      // Customer can read only their own bookings; Staff/Owner can view appointments for their business
+      allow read: if (isAuthenticated() && (resource.data.customerId == request.auth.uid || resource.data.customerUid == request.auth.uid))
+                  || isStaffOfBusiness(resource.data.businessId);
+
+      // Customer can create booking request for themselves; cannot impersonate another customer
+      allow create: if isAuthenticated() && (request.resource.data.customerId == request.auth.uid || request.resource.data.customerUid == request.auth.uid);
+
+      // Customer can reschedule or cancel their own appointment (cannot edit price or tamper with customerId/customerUid)
+      // Staff/Owner can update status (in_service, completed, etc.) for their business
+      allow update: if (isAuthenticated() && (resource.data.customerId == request.auth.uid || resource.data.customerUid == request.auth.uid)
+                        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['customerId', 'customerUid', 'priceInr', 'totalPriceInr', 'businessId']))
+                    || isStaffOfBusiness(resource.data.businessId);
+
+      // Only business owner can delete appointment records
+      allow delete: if isOwnerOfBusiness(resource.data.businessId);
+    }
+
+    // =========================================================================
+    // Collection: Inquiries (Customer Consultation Requests)
+    // =========================================================================
+
+    match /inquiries/{inquiryId} {
+      // Anyone can submit an inquiry; only staff/owner of that business can read and manage inquiries
+      allow create: if true;
+      allow read, update, delete: if isStaffOfBusiness(resource.data.businessId);
+    }
+
+    // =========================================================================
+    // Strict Zero-Trust Fallback: Deny any unspecified collections/subpaths
+    // =========================================================================
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

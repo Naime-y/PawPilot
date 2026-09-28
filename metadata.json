@@ -1,0 +1,6 @@
+{
+  "name": "PawPilot",
+  "description": "Booking automation platform for small appointment-based businesses, featuring Paw & Polish boutique pet grooming studio in Kalyani Nagar, Pune.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

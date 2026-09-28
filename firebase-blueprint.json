@@ -1,0 +1,52 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile with role-based access for customers and owners.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "role": { "type": "string", "enum": ["customer", "owner", "staff"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastLoginAt": { "type": "string", "format": "date-time" },
+        "businessId": { "type": "string" }
+      },
+      "required": ["uid", "role", "createdAt"]
+    },
+    "GroomingService": {
+      "title": "GroomingService",
+      "description": "Grooming service offered by Paw & Polish boutique pet grooming studio.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier of the service" },
+        "name": { "type": "string", "description": "Display name of the grooming service" },
+        "category": { "type": "string", "enum": ["full_groom", "bath_brush", "specialty", "quick_care"] },
+        "duration": { "type": "integer", "description": "Service duration in minutes" },
+        "price": { "type": "number", "description": "Base price in INR" },
+        "description": { "type": "string", "description": "Detailed explanation of the grooming package" },
+        "suitableFor": { "type": "array", "description": "Species supported: dog, cat" },
+        "inclusions": { "type": "array", "description": "List of inclusions in the package" },
+        "popular": { "type": "boolean", "description": "Featured popular badge" },
+        "businessId": { "type": "string", "description": "Associated studio identifier" },
+        "active": { "type": "boolean", "description": "Whether service is available for booking" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "duration", "price", "description"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profiles with roles and contact details"
+    },
+    "/services/{serviceId}": {
+      "schema": "GroomingService",
+      "description": "Grooming services catalog for Paw & Polish"
+    }
+  }
+}
